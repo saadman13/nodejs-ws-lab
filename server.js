@@ -9,6 +9,37 @@ const PORT = process.env.PORT || 8080;
 const PUBLIC_DIR = "public";
 const STATIC_DIR = "static";
 
+public init() {
+  // ...
+  this.wsClient.onmessage = (wsMsgEvent) => {
+    const allCoords: ICoords = JSON.parse(wsMsgEvent.data);
+    for (const playerId of Object.keys(allCoords)) {
+      if (playerId === this.id) {
+        // we don't need to update ourselves
+        continue;
+      }
+      const { x, y, frame } = allCoords[playerId];
+      if (playerId in this.players) {
+        // We have seen this player before, update it!
+        const player = this.players[playerId];
+        if (player.texture.key === "__MISSING") {
+          // Player was instantiated before texture was ready, reinstantiate
+          player.destroy();
+          this.players[playerId] = this.add.sprite(x, y, "player", frame);
+        } else {
+          player.setX(x);
+          player.setY(y);
+          player.setFrame(frame);  
+        }
+      } else {
+        // We have not seen this player before, create it!
+        this.players[playerId] = this.add.sprite(x, y, "player", frame);
+      }
+    }
+  }
+}
+
+
 /**
  * Build and minify all client code for Express
  */
@@ -32,13 +63,18 @@ function setupWSServer(server) {
     server,
     autoAcceptConnections: false
   });
-  let actorCoordinates = { x: 100, y: 100 };
-  wss.on("connection", (ws) => {
-    ws.on("message", (rawMsg) => {
-      console.log(`RECV: ${rawMsg}`);
-      const incommingMessage = JSON.parse(rawMsg);
-      actorCoordinates.x = incommingMessage.x;
-      actorCoordinates.y = incommingMessage.y;
+  function setupWSServer(server) {
+    // ...
+    let actorCoordinates = { };
+    wss.on("connection", (ws) => {
+      ws.on("message", (rawMsg) => {
+        console.log(`RECV: ${rawMsg}`);
+        const incommingMessage = JSON.parse(rawMsg);
+        actorCoordinates[incommingMessage.id] = {
+          x: incommingMessage.x,
+          y: incommingMessage.y,
+          frame: incommingMessage.frame
+        }
       wss.clients.forEach((wsClient) => {
         wsClient.send(JSON.stringify(actorCoordinates));
       })
@@ -52,7 +88,6 @@ function setupWSServer(server) {
   });
   return wss;
 }
-
 /**
  * Setup an Express application and web server
  */
